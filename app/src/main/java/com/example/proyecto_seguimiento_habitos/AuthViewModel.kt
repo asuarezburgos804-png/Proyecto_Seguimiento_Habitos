@@ -35,16 +35,9 @@ class AuthViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
-    init {
-        // Si ya hay una sesión abierta, entramos directo.
-        val user = auth.currentUser
-        if (user != null) {
-            _uiState.value = _uiState.value.copy(
-                isAuthenticated = true,
-                userEmail = user.email
-            )
-        }
-    }
+    // La app siempre arranca en el login: aunque Firebase recuerde la sesión
+    // anterior, no marcamos isAuthenticated hasta que el usuario escriba sus
+    // credenciales. Al validarlas, iniciarSesion() lleva al dashboard.
 
     fun registrar(nombre: String, correo: String, password: String) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)

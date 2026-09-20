@@ -13,7 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.proyecto_seguimiento_habitos.ui.theme.Proyecto_Seguimiento_HabitosTheme
 
-private enum class Pantalla { LOGIN, REGISTER }
+private enum class Pantalla { LOGIN, REGISTER, DASHBOARD, CREAR_HABITO }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,25 +35,22 @@ private fun AppNavegacion(
     var pantalla by remember { mutableStateOf(Pantalla.LOGIN) }
 
     when {
-        uiState.isAuthenticated -> HomeScreen(
+        // Con la sesión iniciada se entra directo al dashboard.
+        uiState.isAuthenticated && pantalla == Pantalla.CREAR_HABITO -> CrearHabitoScreen(
+            onCancelar = { pantalla = Pantalla.DASHBOARD },
+            onHabitoCreado = { pantalla = Pantalla.DASHBOARD }
+        )
+
+        uiState.isAuthenticated -> DashboardScreen(
             userEmail = uiState.userEmail,
+            onCrearHabito = { pantalla = Pantalla.CREAR_HABITO },
             onLogout = {
                 authViewModel.cerrarSesion()
                 pantalla = Pantalla.LOGIN
             }
         )
 
-        pantalla == Pantalla.LOGIN -> LoginScreen(
-            uiState = uiState,
-            onLogin = { correo, password -> authViewModel.iniciarSesion(correo, password) },
-            onNavigateToRegister = {
-                authViewModel.limpiarError()
-                pantalla = Pantalla.REGISTER
-            },
-            onErrorShown = { authViewModel.limpiarError() }
-        )
-
-        else -> RegisterScreen(
+        pantalla == Pantalla.REGISTER -> RegisterScreen(
             uiState = uiState,
             onRegister = { nombre, correo, password ->
                 authViewModel.registrar(nombre, correo, password)
@@ -61,6 +58,16 @@ private fun AppNavegacion(
             onNavigateToLogin = {
                 authViewModel.limpiarError()
                 pantalla = Pantalla.LOGIN
+            },
+            onErrorShown = { authViewModel.limpiarError() }
+        )
+
+        else -> LoginScreen(
+            uiState = uiState,
+            onLogin = { correo, password -> authViewModel.iniciarSesion(correo, password) },
+            onNavigateToRegister = {
+                authViewModel.limpiarError()
+                pantalla = Pantalla.REGISTER
             },
             onErrorShown = { authViewModel.limpiarError() }
         )
