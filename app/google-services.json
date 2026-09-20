@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "146641630794",
+    "project_id": "app-habitos-ccf45",
+    "storage_bucket": "app-habitos-ccf45.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:146641630794:android:5922efca84f258e0bfd8b3",
+        "android_client_info": {
+          "package_name": "com.example.proyecto_seguimiento_habitos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDc1WB8HBDgKf6aGaaRnWyDg3pz1gTqez8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
