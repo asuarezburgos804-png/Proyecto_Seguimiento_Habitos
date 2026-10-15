@@ -1,12 +1,9 @@
 package com.example.proyecto_seguimiento_habitos
 
-/**
- * Validaciones del formulario de creación de hábitos.
- * Igual que Validators: devuelven un mensaje de error (String) si algo está mal,
- * o null si el valor es válido.
- */
+// Validaciones del formulario de hábitos (devuelven el error o null)
 object HabitoValidators {
 
+    // Nombre: 3 a 40 caracteres
     fun validarNombre(nombre: String): String? {
         val n = nombre.trim()
         return when {
@@ -17,11 +14,12 @@ object HabitoValidators {
         }
     }
 
+    // Categoría obligatoria
     fun validarCategoria(categoria: String): String? {
         return if (categoria.isEmpty()) "Selecciona una categoría" else null
     }
 
-    /** Solo aplica cuando la frecuencia es por días específicos. */
+    // Días específicos: al menos un día
     fun validarDias(frecuencia: String, dias: List<Int>): String? {
         return if (frecuencia == Frecuencias.DIAS_ESPECIFICOS && dias.isEmpty()) {
             "Selecciona al menos un día"
@@ -30,7 +28,7 @@ object HabitoValidators {
         }
     }
 
-    /** Solo aplica cuando la frecuencia es "X veces por semana". */
+    // Veces por semana: número del 1 al 7
     fun validarVecesPorSemana(frecuencia: String, veces: String): String? {
         if (frecuencia != Frecuencias.VECES_POR_SEMANA) return null
         val numero = veces.trim().toIntOrNull()
@@ -42,7 +40,7 @@ object HabitoValidators {
         }
     }
 
-    /** El horario es opcional; si se escribe debe tener el formato HH:mm. */
+    // Horario opcional, formato HH:mm
     fun validarHorario(horario: String): String? {
         val h = horario.trim()
         if (h.isEmpty()) return null

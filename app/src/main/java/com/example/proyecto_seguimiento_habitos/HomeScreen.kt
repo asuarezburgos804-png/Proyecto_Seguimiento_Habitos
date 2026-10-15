@@ -16,15 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
-/**
- * Pantalla temporal a la que se llega después de iniciar sesión.
- * Aquí luego irá el seguimiento de hábitos.
- */
+// Pantalla temporal (ya no se usa, la reemplazó DashboardScreen)
 @Composable
 fun HomeScreen(
     userEmail: String?,
     onLogout: () -> Unit
 ) {
+    ////////////////// Interfaz: sesión iniciada
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -52,4 +50,5 @@ fun HomeScreen(
             }
         }
     }
+    ////////////////////////
 }

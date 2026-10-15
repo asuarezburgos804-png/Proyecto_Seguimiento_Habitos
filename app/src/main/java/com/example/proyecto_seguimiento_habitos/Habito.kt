@@ -5,73 +5,100 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/**
- * Modelo de un hábito guardado en Firestore.
- * Ruta en la base de datos: usuarios/{uid}/habitos/{idHabito}
- */
+// Modelo del hábito (usuarios/{uid}/habitos/{id})
 data class Habito(
     val id: String = "",
     val nombre: String = "",
     val categoria: String = "",
     val frecuencia: String = Frecuencias.DIARIO,
-    /** Solo para frecuencia por días específicos. 1 = Lunes ... 7 = Domingo. */
-    val dias: List<Int> = emptyList(),
-    /** Solo para frecuencia "X veces por semana". */
+    val dias: List<Int> = emptyList(),             // 1 = Lunes ... 7 = Domingo
     val vecesPorSemana: Int = 0,
-    /** Opcional, en formato "HH:mm". Vacío si el usuario no puso horario. */
-    val horario: String = "",
-    /** Fechas en las que se completó el hábito, en formato "yyyy-MM-dd". */
-    val completados: List<String> = emptyList()
+    val horario: String = "",                      // "HH:mm" o vacío
+    val completados: List<String> = emptyList(),   // fechas "yyyy-MM-dd"
+    val completadoEn: Map<String, Date> = emptyMap(), // fecha -> momento exacto del cumplimiento
+    val archivado: Boolean = false                 // oculto, pero conserva su historial
 )
 
-/** Categorías disponibles al crear un hábito. */
+// Categorías
 object Categorias {
     val LISTA = listOf("Salud", "Estudio", "Ejercicio", "Trabajo", "Personal")
 }
 
-/** Tipos de frecuencia soportados. */
+// Tipos de frecuencia
 object Frecuencias {
     const val DIARIO = "DIARIO"
     const val DIAS_ESPECIFICOS = "DIAS_ESPECIFICOS"
     const val VECES_POR_SEMANA = "VECES_POR_SEMANA"
 }
 
-/** Nombres cortos de los días. La posición 0 es el lunes (día 1). */
+// Nombres cortos de los días (posición 0 = lunes)
 val NOMBRES_DIAS = listOf("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 
-/** Fecha de hoy en formato "yyyy-MM-dd". Se usa como clave de los días completados. */
-fun fechaDeHoy(): String {
-    val formato = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return formato.format(Date())
-}
+// Fecha "yyyy-MM-dd" de un día
+private fun formatoFecha(fecha: Date): String =
+    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(fecha)
 
-/** Fecha de hoy escrita para mostrarla en pantalla, por ejemplo "Viernes 19 de septiembre". */
+// Fecha de hoy "yyyy-MM-dd"
+fun fechaDeHoy(): String = formatoFecha(Date())
+
+// Fecha de hoy para mostrar, ej. "Viernes, 19 de septiembre"
 fun fechaLegibleDeHoy(): String {
-    val formato = SimpleDateFormat("EEEE d 'de' MMMM", Locale.forLanguageTag("es-ES"))
+    val formato = SimpleDateFormat("EEEE, d 'de' MMMM", Locale.forLanguageTag("es-ES"))
     val texto = formato.format(Date())
     return texto.replaceFirstChar { it.uppercase() }
 }
 
-/** Día de la semana de hoy con 1 = Lunes ... 7 = Domingo. */
-fun diaDeLaSemanaHoy(): Int {
-    val dia = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+// Día de la semana de un Calendar: 1 = Lunes ... 7 = Domingo
+private fun numeroDia(calendario: Calendar): Int {
+    val dia = calendario.get(Calendar.DAY_OF_WEEK)
     return if (dia == Calendar.SUNDAY) 7 else dia - 1
 }
 
-/** Indica si el hábito debe mostrarse en el dashboard de hoy. */
-fun tocaHoy(habito: Habito): Boolean {
+// Día de hoy: 1 = Lunes ... 7 = Domingo
+fun diaDeLaSemanaHoy(): Int = numeroDia(Calendar.getInstance())
+
+// ¿El hábito toca ese día de la semana?
+private fun tocaElDia(habito: Habito, dia: Int): Boolean {
     return when (habito.frecuencia) {
-        Frecuencias.DIAS_ESPECIFICOS -> habito.dias.contains(diaDeLaSemanaHoy())
+        Frecuencias.DIAS_ESPECIFICOS -> habito.dias.contains(dia)
         else -> true
     }
 }
 
-/** Indica si el hábito ya fue marcado como completado el día de hoy. */
+// ¿El hábito toca hoy?
+fun tocaHoy(habito: Habito): Boolean = tocaElDia(habito, diaDeLaSemanaHoy())
+
+// ¿Ya se completó hoy?
 fun estaCompletadoHoy(habito: Habito): Boolean {
     return habito.completados.contains(fechaDeHoy())
 }
 
-/** Texto de la frecuencia para mostrarlo en la tarjeta del hábito. */
+// Hora exacta en que se completó hoy, ej. "08:15" (null si no hay registro)
+fun horaCompletadoHoy(habito: Habito): String? {
+    val momento = habito.completadoEn[fechaDeHoy()] ?: return null
+    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(momento)
+}
+
+// Racha: días programados seguidos con cumplimiento (hoy cuenta si ya se hizo)
+fun rachaActual(habito: Habito): Int {
+    val hechos = habito.completados.toHashSet()
+    val dia = Calendar.getInstance()
+    // Si hoy todavía no se hizo, la racha sigue viva desde ayer
+    if (!hechos.contains(formatoFecha(dia.time))) dia.add(Calendar.DAY_OF_YEAR, -1)
+
+    var racha = 0
+    repeat(366) {
+        val fecha = formatoFecha(dia.time)
+        when {
+            hechos.contains(fecha) -> racha++
+            tocaElDia(habito, numeroDia(dia)) -> return racha  // día programado sin hacer
+        }
+        dia.add(Calendar.DAY_OF_YEAR, -1)
+    }
+    return racha
+}
+
+// Texto de la frecuencia, ej. "Lun, Mié, Vie"
 fun textoFrecuencia(habito: Habito): String {
     return when (habito.frecuencia) {
         Frecuencias.DIARIO -> "Todos los días"
@@ -81,7 +108,7 @@ fun textoFrecuencia(habito: Habito): String {
     }
 }
 
-/** Línea de detalle de la tarjeta: categoría, frecuencia y horario (si tiene). */
+// Detalle de la tarjeta, ej. "Salud · Todos los días · 07:30"
 fun detalleHabito(habito: Habito): String {
     val partes = mutableListOf(habito.categoria, textoFrecuencia(habito))
     if (habito.horario.isNotEmpty()) partes.add(habito.horario)

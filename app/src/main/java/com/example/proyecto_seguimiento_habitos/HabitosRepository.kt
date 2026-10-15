@@ -7,32 +7,25 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import java.util.Date
 
-/**
- * Acceso a los hábitos en Cloud Firestore.
- * Cada usuario guarda sus hábitos en: usuarios/{uid}/habitos
- *
- * Todas las funciones usan callbacks (onExito / onError) igual que el resto del
- * proyecto, para no necesitar ViewModel ni corrutinas.
- */
+// Hábitos en Firestore (usuarios/{uid}/habitos)
+// El historial vive dentro del documento: "completados" (fechas) y "completadoEn" (momento exacto)
 object HabitosRepository {
 
     private const val SIN_SESION = "No hay una sesión activa."
 
+    // Firebase Auth y Firestore
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
 
-    /** Devuelve la colección de hábitos del usuario con la sesión abierta. */
+    // Colección de hábitos del usuario (null si no hay sesión)
     private fun coleccionHabitos(): CollectionReference? {
         val uid = auth.currentUser?.uid ?: return null
         return db.collection("usuarios").document(uid).collection("habitos")
     }
 
-    /**
-     * Escucha los hábitos del usuario en tiempo real: cada vez que se crea o se
-     * actualiza un hábito, se vuelve a llamar a onCambio con la lista nueva.
-     * Hay que guardar el resultado y llamar a remove() al salir de la pantalla.
-     */
+    // Escucha los hábitos en tiempo real (llamar remove() al salir)
     fun escucharHabitos(
         onCambio: (List<Habito>) -> Unit,
         onError: (String) -> Unit
@@ -53,7 +46,17 @@ object HabitosRepository {
         }
     }
 
-    /** Guarda un hábito nuevo en Firestore. */
+    // Campos editables del hábito (no incluye el historial)
+    private fun camposEditables(habito: Habito): Map<String, Any> = mapOf(
+        "nombre" to habito.nombre.trim(),
+        "categoria" to habito.categoria,
+        "frecuencia" to habito.frecuencia,
+        "dias" to habito.dias,
+        "vecesPorSemana" to habito.vecesPorSemana,
+        "horario" to habito.horario.trim()
+    )
+
+    // Guarda un hábito nuevo
     fun crearHabito(
         habito: Habito,
         onExito: () -> Unit,
@@ -65,14 +68,10 @@ object HabitosRepository {
             return
         }
 
-        val datos = hashMapOf(
-            "nombre" to habito.nombre.trim(),
-            "categoria" to habito.categoria,
-            "frecuencia" to habito.frecuencia,
-            "dias" to habito.dias,
-            "vecesPorSemana" to habito.vecesPorSemana,
-            "horario" to habito.horario.trim(),
+        val datos = camposEditables(habito) + mapOf(
             "completados" to emptyList<String>(),
+            "completadoEn" to emptyMap<String, Timestamp>(),
+            "archivado" to false,
             "fechaCreacion" to Timestamp.now()
         )
 
@@ -83,10 +82,30 @@ object HabitosRepository {
             }
     }
 
-    /**
-     * Marca o desmarca el hábito para el día de hoy.
-     * Guarda la fecha exacta ("yyyy-MM-dd") dentro del arreglo "completados".
-     */
+    // Edita nombre, categoría, frecuencia y horario sin tocar el historial
+    fun actualizarHabito(
+        habito: Habito,
+        onExito: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val coleccion = coleccionHabitos()
+        if (coleccion == null) {
+            onError(SIN_SESION)
+            return
+        }
+
+        // update() solo modifica estos campos; "completados" y "completadoEn" quedan intactos
+        val cambios = camposEditables(habito) + ("fechaEdicion" to Timestamp.now())
+
+        coleccion.document(habito.id)
+            .update(cambios)
+            .addOnSuccessListener { onExito() }
+            .addOnFailureListener { excepcion ->
+                onError(excepcion.localizedMessage ?: "No se pudo actualizar el hábito.")
+            }
+    }
+
+    // Marca o desmarca el hábito hoy, guardando la fecha y la hora exacta
     fun marcarComoCompletado(
         habitoId: String,
         completado: Boolean,
@@ -99,16 +118,62 @@ object HabitosRepository {
         }
 
         val hoy = fechaDeHoy()
-        val cambio = if (completado) FieldValue.arrayUnion(hoy) else FieldValue.arrayRemove(hoy)
+        val documento = coleccion.document(habitoId)
+        // Firestore aplica el cambio en local al instante (el dashboard se actualiza sin recargar)
+        val tarea = if (completado) {
+            documento.update(
+                "completados", FieldValue.arrayUnion(hoy),
+                "completadoEn.$hoy", Timestamp.now()
+            )
+        } else {
+            documento.update(
+                "completados", FieldValue.arrayRemove(hoy),
+                "completadoEn.$hoy", FieldValue.delete()
+            )
+        }
+        tarea.addOnFailureListener { excepcion ->
+            onError(excepcion.localizedMessage ?: "No se pudo actualizar el hábito.")
+        }
+    }
+
+    // Archiva (oculta) o restaura un hábito; el historial se conserva
+    fun archivarHabito(
+        habitoId: String,
+        archivar: Boolean,
+        onError: (String) -> Unit
+    ) {
+        val coleccion = coleccionHabitos()
+        if (coleccion == null) {
+            onError(SIN_SESION)
+            return
+        }
 
         coleccion.document(habitoId)
-            .update("completados", cambio)
+            .update("archivado", archivar)
             .addOnFailureListener { excepcion ->
-                onError(excepcion.localizedMessage ?: "No se pudo actualizar el hábito.")
+                onError(excepcion.localizedMessage ?: "No se pudo archivar el hábito.")
             }
     }
 
-    /** Convierte un documento de Firestore en un objeto Habito. */
+    // Elimina el hábito y todo su historial (no se puede deshacer)
+    fun eliminarHabito(
+        habitoId: String,
+        onError: (String) -> Unit
+    ) {
+        val coleccion = coleccionHabitos()
+        if (coleccion == null) {
+            onError(SIN_SESION)
+            return
+        }
+
+        coleccion.document(habitoId)
+            .delete()
+            .addOnFailureListener { excepcion ->
+                onError(excepcion.localizedMessage ?: "No se pudo eliminar el hábito.")
+            }
+    }
+
+    // Documento de Firestore -> Habito
     private fun documentoAHabito(doc: DocumentSnapshot): Habito {
         val datos = doc.data ?: emptyMap()
 
@@ -120,19 +185,31 @@ object HabitosRepository {
             dias = aListaDeNumeros(datos["dias"]),
             vecesPorSemana = (doc.getLong("vecesPorSemana") ?: 0L).toInt(),
             horario = doc.getString("horario") ?: "",
-            completados = aListaDeTextos(datos["completados"])
+            completados = aListaDeTextos(datos["completados"]),
+            completadoEn = aMapaDeFechas(datos["completadoEn"]),
+            archivado = doc.getBoolean("archivado") ?: false
         )
     }
 
-    /** Convierte el campo "dias" de Firestore en una lista de enteros (1 = Lunes). */
+    // Campo "dias" -> List<Int> (Firestore los devuelve como Long)
     private fun aListaDeNumeros(valor: Any?): List<Int> {
         val lista = valor as? List<*> ?: return emptyList()
         return lista.mapNotNull { elemento -> (elemento as? Number)?.toInt() }
     }
 
-    /** Convierte el campo "completados" de Firestore en una lista de fechas. */
+    // Campo "completados" -> List<String>
     private fun aListaDeTextos(valor: Any?): List<String> {
         val lista = valor as? List<*> ?: return emptyList()
         return lista.mapNotNull { elemento -> elemento as? String }
+    }
+
+    // Campo "completadoEn" -> Map<fecha, Date>
+    private fun aMapaDeFechas(valor: Any?): Map<String, Date> {
+        val mapa = valor as? Map<*, *> ?: return emptyMap()
+        return mapa.entries.mapNotNull { (clave, momento) ->
+            val fecha = clave as? String ?: return@mapNotNull null
+            val date = (momento as? Timestamp)?.toDate() ?: return@mapNotNull null
+            fecha to date
+        }.toMap()
     }
 }

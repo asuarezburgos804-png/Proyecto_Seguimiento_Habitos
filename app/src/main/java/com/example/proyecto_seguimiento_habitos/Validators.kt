@@ -2,13 +2,10 @@ package com.example.proyecto_seguimiento_habitos
 
 import android.util.Patterns
 
-/**
- * Validaciones reutilizables para los formularios de login y registro.
- * Cada función devuelve un mensaje de error (String) si algo está mal,
- * o null si el valor es válido.
- */
+// Validaciones de login y registro (devuelven el error o null)
 object Validators {
 
+    // Nombre: 2 a 50 caracteres
     fun validarNombre(nombre: String): String? {
         val n = nombre.trim()
         return when {
@@ -19,16 +16,17 @@ object Validators {
         }
     }
 
+    // Correo con formato válido
     fun validarCorreo(correo: String): String? {
         val c = correo.trim()
         return when {
             c.isEmpty() -> "Ingresa tu correo"
-            !Patterns.EMAIL_ADDRESS.matcher(c).matches() -> "Correo no válido"
+            !Patterns.EMAIL_ADDRESS.matcher(c).matches() -> "Correo no válido solo se puede usar @gmail"
             else -> null
         }
     }
 
-    /** Validación estricta para el REGISTRO (contraseña nueva). */
+    // Contraseña de registro: mín. 8, letras y números
     fun validarPassword(password: String): String? {
         return when {
             password.isEmpty() -> "Ingresa una contraseña"
@@ -39,11 +37,12 @@ object Validators {
         }
     }
 
-    /** Validación simple para el LOGIN (solo que no esté vacía). */
+    // Contraseña de login: no vacía
     fun validarPasswordLogin(password: String): String? {
         return if (password.isEmpty()) "Ingresa tu contraseña" else null
     }
 
+    // Confirmación igual a la contraseña
     fun validarConfirmacion(password: String, confirmacion: String): String? {
         return when {
             confirmacion.isEmpty() -> "Confirma tu contraseña"
