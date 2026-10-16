@@ -187,7 +187,9 @@ object HabitosRepository {
             horario = doc.getString("horario") ?: "",
             completados = aListaDeTextos(datos["completados"]),
             completadoEn = aMapaDeFechas(datos["completadoEn"]),
-            archivado = doc.getBoolean("archivado") ?: false
+            archivado = doc.getBoolean("archivado") ?: false,
+            // Se guarda al crear el hábito: el calendario no juzga los días anteriores
+            fechaCreacion = doc.getTimestamp("fechaCreacion")?.toDate()
         )
     }
 

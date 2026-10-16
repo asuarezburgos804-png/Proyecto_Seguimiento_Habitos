@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Home
@@ -41,7 +42,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-// Hoja inferior con las acciones de un hábito: editar, archivar/restaurar y eliminar
+// Hoja inferior con las acciones de un hábito: ver progreso, editar, archivar/restaurar y eliminar
+// onVerCalendario es opcional: si no se pasa, esa fila no se muestra
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpcionesHabitoSheet(
@@ -49,7 +51,8 @@ fun OpcionesHabitoSheet(
     onEditar: () -> Unit,
     onArchivar: () -> Unit,
     onEliminar: () -> Unit,
-    onCerrar: () -> Unit
+    onCerrar: () -> Unit,
+    onVerCalendario: (() -> Unit)? = null
 ) {
     ////////////////// Interfaz: hoja de opciones
     ModalBottomSheet(
@@ -77,6 +80,14 @@ fun OpcionesHabitoSheet(
             }
             Spacer(Modifier.height(24.dp))
 
+            if (onVerCalendario != null) {
+                FilaOpcion(
+                    icono = Icons.Outlined.CalendarMonth,
+                    titulo = "Ver progreso",
+                    detalle = "Calendario del mes y rachas",
+                    onClick = onVerCalendario
+                )
+            }
             if (!habito.archivado) {
                 FilaOpcion(Icons.Outlined.Edit, "Editar hábito", "Nombre, frecuencia u horario", onClick = onEditar)
             }

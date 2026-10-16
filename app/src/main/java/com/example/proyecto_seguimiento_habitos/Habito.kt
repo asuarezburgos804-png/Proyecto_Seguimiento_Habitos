@@ -1,7 +1,6 @@
 package com.example.proyecto_seguimiento_habitos
 
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -16,7 +15,8 @@ data class Habito(
     val horario: String = "",                      // "HH:mm" o vacío
     val completados: List<String> = emptyList(),   // fechas "yyyy-MM-dd"
     val completadoEn: Map<String, Date> = emptyMap(), // fecha -> momento exacto del cumplimiento
-    val archivado: Boolean = false                 // oculto, pero conserva su historial
+    val archivado: Boolean = false,                // oculto, pero conserva su historial
+    val fechaCreacion: Date? = null                // desde cuándo existe (antes de esto no hay días que juzgar)
 )
 
 // Categorías
@@ -34,12 +34,10 @@ object Frecuencias {
 // Nombres cortos de los días (posición 0 = lunes)
 val NOMBRES_DIAS = listOf("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 
-// Fecha "yyyy-MM-dd" de un día
-private fun formatoFecha(fecha: Date): String =
-    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(fecha)
+// Las rachas, el estado de cada día y el calendario viven en Rachas.kt
 
 // Fecha de hoy "yyyy-MM-dd"
-fun fechaDeHoy(): String = formatoFecha(Date())
+fun fechaDeHoy(): String = textoDeFecha(hoyCalendario())
 
 // Fecha de hoy para mostrar, ej. "Viernes, 19 de septiembre"
 fun fechaLegibleDeHoy(): String {
@@ -48,25 +46,16 @@ fun fechaLegibleDeHoy(): String {
     return texto.replaceFirstChar { it.uppercase() }
 }
 
-// Día de la semana de un Calendar: 1 = Lunes ... 7 = Domingo
-private fun numeroDia(calendario: Calendar): Int {
-    val dia = calendario.get(Calendar.DAY_OF_WEEK)
-    return if (dia == Calendar.SUNDAY) 7 else dia - 1
-}
-
 // Día de hoy: 1 = Lunes ... 7 = Domingo
-fun diaDeLaSemanaHoy(): Int = numeroDia(Calendar.getInstance())
+fun diaDeLaSemanaHoy(): Int = numeroDiaSemana(hoyCalendario())
 
-// ¿El hábito toca ese día de la semana?
-private fun tocaElDia(habito: Habito, dia: Int): Boolean {
-    return when (habito.frecuencia) {
-        Frecuencias.DIAS_ESPECIFICOS -> habito.dias.contains(dia)
-        else -> true
-    }
+// ¿El hábito debe aparecer hoy en el día del usuario?
+fun tocaHoy(habito: Habito): Boolean = when (habito.frecuencia) {
+    Frecuencias.DIAS_ESPECIFICOS -> habito.dias.contains(diaDeLaSemanaHoy())
+    // "X por semana" no fija días: aparece mientras falte cumplir la meta de la semana
+    Frecuencias.VECES_POR_SEMANA -> estaCompletadoHoy(habito) || faltanEstaSemana(habito) > 0
+    else -> true
 }
-
-// ¿El hábito toca hoy?
-fun tocaHoy(habito: Habito): Boolean = tocaElDia(habito, diaDeLaSemanaHoy())
 
 // ¿Ya se completó hoy?
 fun estaCompletadoHoy(habito: Habito): Boolean {
@@ -77,25 +66,6 @@ fun estaCompletadoHoy(habito: Habito): Boolean {
 fun horaCompletadoHoy(habito: Habito): String? {
     val momento = habito.completadoEn[fechaDeHoy()] ?: return null
     return SimpleDateFormat("HH:mm", Locale.getDefault()).format(momento)
-}
-
-// Racha: días programados seguidos con cumplimiento (hoy cuenta si ya se hizo)
-fun rachaActual(habito: Habito): Int {
-    val hechos = habito.completados.toHashSet()
-    val dia = Calendar.getInstance()
-    // Si hoy todavía no se hizo, la racha sigue viva desde ayer
-    if (!hechos.contains(formatoFecha(dia.time))) dia.add(Calendar.DAY_OF_YEAR, -1)
-
-    var racha = 0
-    repeat(366) {
-        val fecha = formatoFecha(dia.time)
-        when {
-            hechos.contains(fecha) -> racha++
-            tocaElDia(habito, numeroDia(dia)) -> return racha  // día programado sin hacer
-        }
-        dia.add(Calendar.DAY_OF_YEAR, -1)
-    }
-    return racha
 }
 
 // Texto de la frecuencia, ej. "Lun, Mié, Vie"

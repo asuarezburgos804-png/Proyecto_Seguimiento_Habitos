@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,10 +24,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,15 +39,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -65,6 +66,7 @@ fun DashboardScreen(
     onEditar: (Habito) -> Unit,
     onArchivar: (Habito) -> Unit,
     onEliminar: (Habito) -> Unit,
+    onVerCalendario: (Habito) -> Unit,
     barraInferior: @Composable () -> Unit
 ) {
     // Hábito con la hoja de opciones abierta / pendiente de confirmar borrado
@@ -78,8 +80,8 @@ fun DashboardScreen(
     val completados = habitosDeHoy.filter { estaCompletadoHoy(it) }
     val otrosDias = activos.size - habitosDeHoy.size
 
-    // Chips del encabezado: mejor racha y nivel (1 nivel cada 10 cumplimientos)
-    val mejorRacha = activos.maxOfOrNull { rachaActual(it) } ?: 0
+    // Chips del encabezado: mejor racha de todos los hábitos y nivel (1 nivel cada 10 cumplimientos)
+    val mejorRachaGlobal = activos.maxOfOrNull { mejorRacha(it) } ?: 0
     val nivel = activos.sumOf { it.completados.size } / 10 + 1
 
     ////////////////// Interfaz: dashboard
@@ -119,7 +121,7 @@ fun DashboardScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChipEncabezado(
                         icono = Icons.Filled.LocalFireDepartment,
-                        texto = "$mejorRacha",
+                        texto = "$mejorRachaGlobal",
                         fondo = TertiaryFixed,
                         colorIcono = MaterialTheme.colorScheme.tertiaryContainer,
                         colorTexto = MaterialTheme.colorScheme.tertiary,
@@ -135,7 +137,7 @@ fun DashboardScreen(
                 }
             }
             ////////////////////////
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(24.dp))
 
             ////////////////// Interfaz: contenido
             when {
@@ -156,18 +158,24 @@ fun DashboardScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
+                    ////////////////// Interfaz: resumen del día
+                    item(key = "resumen-dia") {
+                        TarjetaResumenDia(
+                            hechos = completados.size,
+                            total = habitosDeHoy.size
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    ////////////////////////
+
                     ////////////////// Interfaz: Pendientes hoy
                     item(key = "titulo-pendientes") {
-                        TituloSeccion("Pendientes hoy")
+                        TituloSeccion("Pendientes hoy", cantidad = pendientes.size)
                     }
 
                     if (pendientes.isEmpty()) {
                         item(key = "todo-listo") {
-                            Text(
-                                text = "¡Ya cumpliste todos tus hábitos de hoy!",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            TarjetaTodoListo()
                         }
                     }
 
@@ -185,8 +193,8 @@ fun DashboardScreen(
                     ////////////////// Interfaz: Completados hoy
                     if (completados.isNotEmpty()) {
                         item(key = "titulo-completados") {
-                            Spacer(Modifier.height(20.dp))
-                            TituloSeccion("Completados hoy", apagado = true)
+                            Spacer(Modifier.height(16.dp))
+                            TituloSeccion("Completados hoy", cantidad = completados.size, apagado = true)
                         }
 
                         items(completados, key = { it.id }) { habito ->
@@ -205,11 +213,7 @@ fun DashboardScreen(
                     if (otrosDias > 0) {
                         item(key = "otros-dias") {
                             Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "Tienes $otrosDias hábito(s) programados para otros días.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            FilaOtrosDias(otrosDias)
                         }
                     }
                     ////////////////////////
@@ -225,6 +229,10 @@ fun DashboardScreen(
     if (habitoOpciones != null) {
         OpcionesHabitoSheet(
             habito = habitoOpciones,
+            onVerCalendario = {
+                idOpciones = null
+                onVerCalendario(habitoOpciones)
+            },
             onEditar = {
                 idOpciones = null
                 onEditar(habitoOpciones)
@@ -256,6 +264,162 @@ fun DashboardScreen(
     ////////////////////////
 }
 
+// Tarjeta verde con el avance del día y una barra de progreso
+@Composable
+private fun TarjetaResumenDia(hechos: Int, total: Int) {
+    val colores = MaterialTheme.colorScheme
+    val forma = RoundedCornerShape(24.dp)
+
+    // Fracción para la barra (0 a 1) y porcentaje para mostrar
+    val fraccion = if (total == 0) 0f else hechos.toFloat() / total
+    val porcentaje = (fraccion * 100).toInt()
+    val faltan = total - hechos
+
+    ////////////////// Interfaz: resumen del día
+    Surface(
+        shape = forma,
+        color = colores.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .sombraSuave(forma)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Tu día de hoy",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colores.onPrimary.copy(alpha = 0.75f)
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "$hechos de $total hábitos",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = colores.onPrimary
+                    )
+                }
+                Text(
+                    text = "$porcentaje%",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = colores.onPrimary
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+
+            // Barra de progreso (dos cajas: el riel y lo avanzado)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(colores.onPrimary.copy(alpha = 0.25f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraccion)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(50))
+                        .background(colores.onPrimary)
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = when {
+                    total == 0 -> "Hoy no tienes hábitos programados."
+                    faltan == 0 -> "¡Día completo! Cumpliste todo lo que te tocaba."
+                    faltan == 1 -> "Te falta 1 hábito para cerrar el día."
+                    else -> "Te faltan $faltan hábitos para cerrar el día."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = colores.onPrimary.copy(alpha = 0.85f)
+            )
+        }
+    }
+    ////////////////////////
+}
+
+// Tarjeta que aparece cuando ya no quedan pendientes
+@Composable
+private fun TarjetaTodoListo() {
+    val colores = MaterialTheme.colorScheme
+    val forma = RoundedCornerShape(20.dp)
+
+    ////////////////// Interfaz: sin pendientes
+    Surface(
+        shape = forma,
+        color = colores.surfaceContainerLowest,
+        border = BorderStroke(1.dp, colores.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = colores.primaryContainer,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.TaskAlt,
+                        contentDescription = null,
+                        tint = colores.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(
+                    text = "Nada pendiente",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colores.onBackground
+                )
+                Text(
+                    text = "Ya cumpliste todos tus hábitos de hoy.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colores.onSurfaceVariant
+                )
+            }
+        }
+    }
+    ////////////////////////
+}
+
+// Aviso de los hábitos que están programados para otros días
+@Composable
+private fun FilaOtrosDias(cantidad: Int) {
+    val colores = MaterialTheme.colorScheme
+    ////////////////// Interfaz: aviso de otros días
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colores.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.CalendarMonth,
+                contentDescription = null,
+                tint = colores.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = if (cantidad == 1) "Tienes 1 hábito programado para otros días."
+                else "Tienes $cantidad hábitos programados para otros días.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colores.onSurfaceVariant
+            )
+        }
+    }
+    ////////////////////////
+}
+
 // Chip del encabezado (racha / nivel)
 @Composable
 private fun ChipEncabezado(
@@ -273,27 +437,45 @@ private fun ChipEncabezado(
         modifier = Modifier.sombraSuave(RoundedCornerShape(50), 1.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icono, contentDescription = null, tint = colorIcono, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
+            Icon(icono, contentDescription = null, tint = colorIcono, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(5.dp))
             Text(texto, style = MaterialTheme.typography.labelMedium, color = colorTexto)
         }
     }
 }
 
-// Título de sección, ej. "Pendientes hoy"
+// Título de sección con la cantidad al lado, ej. "Pendientes hoy (2)"
 @Composable
-private fun TituloSeccion(titulo: String, apagado: Boolean = false) {
+private fun TituloSeccion(titulo: String, cantidad: Int, apagado: Boolean = false) {
+    val colores = MaterialTheme.colorScheme
     ////////////////// Interfaz: título de sección
-    Text(
-        text = titulo,
-        style = MaterialTheme.typography.headlineMedium,
-        color = if (apagado) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-        else MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(bottom = 4.dp)
-    )
+    Row(
+        modifier = Modifier.padding(bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = titulo,
+            style = MaterialTheme.typography.headlineMedium,
+            color = if (apagado) colores.onSurfaceVariant.copy(alpha = 0.8f) else colores.onBackground
+        )
+        if (cantidad > 0) {
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = colores.surfaceContainerLow
+            ) {
+                Text(
+                    text = "$cantidad",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colores.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                )
+            }
+        }
+    }
     ////////////////////////
 }
 
@@ -314,15 +496,14 @@ private fun TarjetaHabito(
     Surface(
         onClick = onAbrirOpciones,
         shape = forma,
-        color = if (completado) colores.surfaceContainerLow else colores.surfaceContainerLowest.copy(alpha = 0.85f),
+        color = if (completado) colores.surfaceContainerLow else colores.surfaceContainerLowest,
         border = BorderStroke(1.dp, if (completado) colores.surfaceVariant else Color.White.copy(alpha = 0.4f)),
         modifier = modifier
             .fillMaxWidth()
-            .alpha(if (completado) 0.7f else 1f)
             .then(if (completado) Modifier else Modifier.sombraSuave(forma))
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconoHabito(habito, apagado = completado)
@@ -337,7 +518,7 @@ private fun TarjetaHabito(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Estado: hora exacta de cumplimiento, u horario pendiente
                     val (iconoEstado, textoEstado) = when {
@@ -375,7 +556,7 @@ private fun TarjetaHabito(
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = if (racha == 1) "Racha: 1 día" else "Racha: $racha días",
+                            text = textoRacha(racha, habito),
                             style = MaterialTheme.typography.labelSmall,
                             color = colores.onSurfaceVariant,
                             maxLines = 1

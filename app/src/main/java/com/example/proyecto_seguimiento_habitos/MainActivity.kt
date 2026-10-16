@@ -17,7 +17,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.proyecto_seguimiento_habitos.ui.theme.Proyecto_Seguimiento_HabitosTheme
 
 // Pantallas de la app
-private enum class Pantalla { LOGIN, REGISTER, PRINCIPAL, CREAR_HABITO, EDITAR_HABITO }
+private enum class Pantalla { LOGIN, REGISTER, PRINCIPAL, CREAR_HABITO, EDITAR_HABITO, CALENDARIO }
 
 // Actividad principal
 class MainActivity : ComponentActivity() {
@@ -50,6 +50,7 @@ private fun AppNavegacion(
     var pantalla by rememberSaveable { mutableStateOf(Pantalla.LOGIN) }
     var pestana by rememberSaveable { mutableStateOf(Pestana.INICIO) }
     var idEditar by rememberSaveable { mutableStateOf<String?>(null) }
+    var idCalendario by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Snackbar compartido por inicio y perfil
     val snackbarHostState = remember { SnackbarHostState() }
@@ -67,13 +68,21 @@ private fun AppNavegacion(
         }
     }
 
-    // Barra inferior (Stats y Logros aún no existen)
+    // Barra inferior: Stats abre el calendario de progreso (Logros aún no existe)
+    val pestanaActual = if (pantalla == Pantalla.CALENDARIO) Pestana.STATS else pestana
     val barraInferior: @Composable () -> Unit = {
-        BarraNavegacion(actual = pestana) { elegida ->
+        BarraNavegacion(actual = pestanaActual) { elegida ->
             when (elegida) {
                 Pestana.ANADIR -> pantalla = Pantalla.CREAR_HABITO
-                Pestana.STATS, Pestana.LOGROS -> habitosViewModel.avisar("Esta sección estará disponible pronto.")
-                else -> pestana = elegida
+                Pestana.STATS -> {
+                    idCalendario = null          // sin hábito fijo: se elige en la pantalla
+                    pantalla = Pantalla.CALENDARIO
+                }
+                Pestana.LOGROS -> habitosViewModel.avisar("Esta sección estará disponible pronto.")
+                else -> {
+                    pestana = elegida
+                    pantalla = Pantalla.PRINCIPAL
+                }
             }
         }
     }
@@ -98,6 +107,17 @@ private fun AppNavegacion(
                 habitosViewModel.avisar("Cambios guardados.")
                 pantalla = Pantalla.PRINCIPAL
             }
+        )
+
+        // Calendario de progreso
+        uiState.isAuthenticated && pantalla == Pantalla.CALENDARIO -> CalendarioScreen(
+            habitos = habitosState.habitos,
+            idInicial = idCalendario,
+            onVolver = {
+                pestana = Pestana.INICIO
+                pantalla = Pantalla.PRINCIPAL
+            },
+            barraInferior = barraInferior
         )
 
         // Perfil
@@ -130,6 +150,10 @@ private fun AppNavegacion(
             },
             onArchivar = { habitosViewModel.archivar(it, archivar = true) },
             onEliminar = { habitosViewModel.eliminar(it) },
+            onVerCalendario = {
+                idCalendario = it.id
+                pantalla = Pantalla.CALENDARIO
+            },
             barraInferior = barraInferior
         )
 
