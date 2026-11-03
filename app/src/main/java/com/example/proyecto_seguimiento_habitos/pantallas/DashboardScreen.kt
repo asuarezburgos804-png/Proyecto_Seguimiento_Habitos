@@ -1,4 +1,8 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.pantallas
+
+import com.example.proyecto_seguimiento_habitos.modelo.*
+import com.example.proyecto_seguimiento_habitos.viewmodels.*
+import com.example.proyecto_seguimiento_habitos.componentes.*
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
@@ -39,8 +43,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,40 +60,50 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.example.proyecto_seguimiento_habitos.ui.theme.TertiaryFixed
 
 // Pantalla principal: hábitos de hoy (pendientes y completados)
 @Composable
 fun DashboardScreen(
-    nombreUsuario: String?,
-    estado: HabitosUiState,
-    snackbarHostState: SnackbarHostState,
-    onMarcar: (Habito, Boolean) -> Unit,
-    onEditar: (Habito) -> Unit,
-    onArchivar: (Habito) -> Unit,
-    onEliminar: (Habito) -> Unit,
-    onVerCalendario: (Habito) -> Unit,
-    barraInferior: @Composable () -> Unit
+    navController: NavController,
+    authViewModel: AuthViewModel,
+    habitosViewModel: HabitosViewModel
 ) {
+    val nombreUsuario = authViewModel.nombre
+
     // Hábito con la hoja de opciones abierta / pendiente de confirmar borrado
-    var idOpciones by rememberSaveable { mutableStateOf<String?>(null) }
-    var idEliminar by rememberSaveable { mutableStateOf<String?>(null) }
+    var idMenu by rememberSaveable { mutableStateOf<String?>(null) }
+    var idBorrar by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Hábitos activos de hoy: pendientes y completados (se recalculan con cada cambio de Firestore)
-    val activos = estado.activos
+    val activos = habitosViewModel.activos()
     val habitosDeHoy = activos.filter { tocaHoy(it) }
     val pendientes = habitosDeHoy.filter { !estaCompletadoHoy(it) }
     val completados = habitosDeHoy.filter { estaCompletadoHoy(it) }
     val otrosDias = activos.size - habitosDeHoy.size
 
-    // Chips del encabezado: mejor racha de todos los hábitos y nivel (1 nivel cada 10 cumplimientos)
-    val mejorRachaGlobal = activos.maxOfOrNull { mejorRacha(it) } ?: 0
-    val nivel = activos.sumOf { it.completados.size } / 10 + 1
+    // Chips del encabezado: mejor racha de todos los hábitos y nivel (sale de los puntos guardados)
+    var mejorRachaTotal = 0
+    for (habito in activos) {
+        mejorRachaTotal = maxOf(mejorRachaTotal, mejorRacha(habito))
+    }
+    val nivel = nivelDe(habitosViewModel.puntos)
+
+    // Snackbar: avisos de los hábitos (archivado, eliminado, errores...)
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(habitosViewModel.mensaje) {
+        val mensaje = habitosViewModel.mensaje
+        if (mensaje != null) {
+            habitosViewModel.mensaje = null
+            snackbarHostState.showSnackbar(mensaje)
+        }
+    }
 
     ////////////////// Interfaz: dashboard
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = barraInferior,
+        bottomBar = { BarraNavegacion(navController, rutaActual = "inicio") },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
@@ -121,7 +137,7 @@ fun DashboardScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChipEncabezado(
                         icono = Icons.Filled.LocalFireDepartment,
-                        texto = "$mejorRachaGlobal",
+                        texto = "$mejorRachaTotal",
                         fondo = TertiaryFixed,
                         colorIcono = MaterialTheme.colorScheme.tertiaryContainer,
                         colorTexto = MaterialTheme.colorScheme.tertiary,
@@ -142,7 +158,7 @@ fun DashboardScreen(
             ////////////////// Interfaz: contenido
             when {
                 // Cargando
-                estado.cargando -> Box(
+                habitosViewModel.cargando -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
@@ -183,8 +199,8 @@ fun DashboardScreen(
                         TarjetaHabito(
                             habito = habito,
                             completado = false,
-                            onMarcar = { onMarcar(habito, true) },
-                            onAbrirOpciones = { idOpciones = habito.id },
+                            onMarcar = { habitosViewModel.marcar(habito, true) },
+                            onAbrirOpciones = { idMenu = habito.id },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -201,8 +217,8 @@ fun DashboardScreen(
                             TarjetaHabito(
                                 habito = habito,
                                 completado = true,
-                                onMarcar = { onMarcar(habito, false) },
-                                onAbrirOpciones = { idOpciones = habito.id },
+                                onMarcar = { habitosViewModel.marcar(habito, false) },
+                                onAbrirOpciones = { idMenu = habito.id },
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -225,40 +241,40 @@ fun DashboardScreen(
     ////////////////////////
 
     ////////////////// Interfaz: opciones del hábito
-    val habitoOpciones = idOpciones?.let { id -> activos.firstOrNull { it.id == id } }
-    if (habitoOpciones != null) {
+    val habitoMenu = activos.find { it.id == idMenu }
+    if (habitoMenu != null) {
         OpcionesHabitoSheet(
-            habito = habitoOpciones,
+            habito = habitoMenu,
             onVerCalendario = {
-                idOpciones = null
-                onVerCalendario(habitoOpciones)
+                idMenu = null
+                navController.navigate("calendario/${habitoMenu.id}")
             },
             onEditar = {
-                idOpciones = null
-                onEditar(habitoOpciones)
+                idMenu = null
+                navController.navigate("editar/${habitoMenu.id}")
             },
             onArchivar = {
-                idOpciones = null
-                onArchivar(habitoOpciones)
+                idMenu = null
+                habitosViewModel.archivar(habitoMenu, archivar = true)
             },
             onEliminar = {
-                idOpciones = null
-                idEliminar = habitoOpciones.id
+                idMenu = null
+                idBorrar = habitoMenu.id
             },
-            onCerrar = { idOpciones = null }
+            onCerrar = { idMenu = null }
         )
     }
 
     // Confirmación explícita antes de borrar
-    val habitoEliminar = idEliminar?.let { id -> activos.firstOrNull { it.id == id } }
-    if (habitoEliminar != null) {
+    val habitoBorrar = activos.find { it.id == idBorrar }
+    if (habitoBorrar != null) {
         DialogoEliminar(
-            habito = habitoEliminar,
+            habito = habitoBorrar,
             onConfirmar = {
-                idEliminar = null
-                onEliminar(habitoEliminar)
+                idBorrar = null
+                habitosViewModel.eliminar(habitoBorrar)
             },
-            onCancelar = { idEliminar = null }
+            onCancelar = { idBorrar = null }
         )
     }
     ////////////////////////
@@ -271,8 +287,8 @@ private fun TarjetaResumenDia(hechos: Int, total: Int) {
     val forma = RoundedCornerShape(24.dp)
 
     // Fracción para la barra (0 a 1) y porcentaje para mostrar
-    val fraccion = if (total == 0) 0f else hechos.toFloat() / total
-    val porcentaje = (fraccion * 100).toInt()
+    val avance = if (total == 0) 0f else hechos.toFloat() / total
+    val porcentaje = (avance * 100).toInt()
     val faltan = total - hechos
 
     ////////////////// Interfaz: resumen del día
@@ -316,7 +332,7 @@ private fun TarjetaResumenDia(hechos: Int, total: Int) {
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(fraccion)
+                        .fillMaxWidth(avance)
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(50))
                         .background(colores.onPrimary)
@@ -433,7 +449,7 @@ private fun ChipEncabezado(
     Surface(
         shape = RoundedCornerShape(50),
         color = fondo,
-        border = borde?.let { BorderStroke(1.dp, it) },
+        border = if (borde != null) BorderStroke(1.dp, borde) else null,
         modifier = Modifier.sombraSuave(RoundedCornerShape(50), 1.dp)
     ) {
         Row(
@@ -492,6 +508,9 @@ private fun TarjetaHabito(
     val forma = RoundedCornerShape(24.dp)
     val racha = rachaActual(habito)
 
+    // Solo las tarjetas pendientes llevan sombra
+    val sombra = if (completado) Modifier else Modifier.sombraSuave(forma)
+
     ////////////////// Interfaz: tarjeta del hábito
     Surface(
         onClick = onAbrirOpciones,
@@ -500,7 +519,7 @@ private fun TarjetaHabito(
         border = BorderStroke(1.dp, if (completado) colores.surfaceVariant else Color.White.copy(alpha = 0.4f)),
         modifier = modifier
             .fillMaxWidth()
-            .then(if (completado) Modifier else Modifier.sombraSuave(forma))
+            .then(sombra)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -521,11 +540,15 @@ private fun TarjetaHabito(
                 Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Estado: hora exacta de cumplimiento, u horario pendiente
-                    val (iconoEstado, textoEstado) = when {
-                        completado -> Icons.Outlined.CheckCircle to
-                            (horaCompletadoHoy(habito)?.let { "Completado a las $it" } ?: "Completado")
-                        habito.horario.isNotEmpty() -> Icons.Outlined.Schedule to "Pendiente · ${habito.horario}"
-                        else -> null to textoFrecuencia(habito)
+                    var iconoEstado: ImageVector? = null
+                    var textoEstado = textoFrecuencia(habito)
+                    if (completado) {
+                        val hora = horaCompletadoHoy(habito)
+                        iconoEstado = Icons.Outlined.CheckCircle
+                        textoEstado = if (hora != null) "Completado a las $hora" else "Completado"
+                    } else if (habito.horario.isNotEmpty()) {
+                        iconoEstado = Icons.Outlined.Schedule
+                        textoEstado = "Pendiente · ${habito.horario}"
                     }
                     if (iconoEstado != null) {
                         Icon(

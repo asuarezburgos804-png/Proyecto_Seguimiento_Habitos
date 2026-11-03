@@ -1,4 +1,7 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.componentes
+
+import com.example.proyecto_seguimiento_habitos.modelo.*
+import com.example.proyecto_seguimiento_habitos.irAInicio
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 
 // Hoja inferior con las acciones de un hábito: ver progreso, editar, archivar/restaurar y eliminar
 // onVerCalendario es opcional: si no se pasa, esa fila no se muestra
@@ -76,6 +80,24 @@ fun OpcionesHabitoSheet(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (habito.nota.isNotEmpty()) {
+                        Text("Nota: ${habito.nota}")
+                    }
+                    /*
+                    val editado = habito.fechaEdicion
+
+                    if (editado != null)
+                    {
+                        Text("Editado por ultima vez: ${fechaLegibleEditable(editado)}")
+                    }
+
+
+                    val archivado = habito.fechaArchivar
+                    if (habito.archivado && archivado != null){
+                        Text("Archivado por ultima vez: ${fechaLegibleEditable(archivado)}")
+                    }
+                    */
+
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -203,15 +225,10 @@ fun IconoHabito(habito: Habito, apagado: Boolean = false) {
     }
 }
 
-// Pestañas de la barra inferior
-enum class Pestana { INICIO, STATS, ANADIR, LOGROS, PERFIL }
-
-// Barra de navegación inferior (como en el mockup del dashboard)
+// Barra de navegación inferior.
+// rutaActual = ruta de la pantalla abierta: "inicio", "calendario", "logros" o "perfil"
 @Composable
-fun BarraNavegacion(
-    actual: Pestana,
-    onSeleccionar: (Pestana) -> Unit
-) {
+fun BarraNavegacion(navController: NavController, rutaActual: String) {
     ////////////////// Interfaz: barra inferior
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -228,20 +245,20 @@ fun BarraNavegacion(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ItemNavegacion(Icons.Outlined.Home, Icons.Filled.Home, "Inicio", actual == Pestana.INICIO) {
-                onSeleccionar(Pestana.INICIO)
+            ItemNavegacion(Icons.Outlined.Home, Icons.Filled.Home, "Inicio", rutaActual == "inicio") {
+                irAInicio(navController)
             }
-            ItemNavegacion(Icons.Outlined.Leaderboard, Icons.Outlined.Leaderboard, "Stats", actual == Pestana.STATS) {
-                onSeleccionar(Pestana.STATS)
+            ItemNavegacion(Icons.Outlined.Leaderboard, Icons.Outlined.Leaderboard, "Stats", rutaActual == "calendario") {
+                navController.navigate("calendario") { launchSingleTop = true }
             }
             ItemNavegacion(Icons.Outlined.AddCircleOutline, Icons.Outlined.AddCircleOutline, "Añadir", false) {
-                onSeleccionar(Pestana.ANADIR)
+                navController.navigate("crear")
             }
-            ItemNavegacion(Icons.Outlined.MilitaryTech, Icons.Outlined.MilitaryTech, "Logros", actual == Pestana.LOGROS) {
-                onSeleccionar(Pestana.LOGROS)
+            ItemNavegacion(Icons.Outlined.MilitaryTech, Icons.Outlined.MilitaryTech, "Logros", rutaActual == "logros") {
+                navController.navigate("logros") { launchSingleTop = true }
             }
-            ItemNavegacion(Icons.Outlined.Person, Icons.Filled.Person, "Perfil", actual == Pestana.PERFIL) {
-                onSeleccionar(Pestana.PERFIL)
+            ItemNavegacion(Icons.Outlined.Person, Icons.Filled.Person, "Perfil", rutaActual == "perfil") {
+                navController.navigate("perfil") { launchSingleTop = true }
             }
         }
     }

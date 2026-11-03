@@ -1,4 +1,8 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.pantallas
+
+import com.example.proyecto_seguimiento_habitos.modelo.*
+import com.example.proyecto_seguimiento_habitos.viewmodels.*
+import com.example.proyecto_seguimiento_habitos.componentes.*
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,35 +34,56 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 
 // Perfil: datos del usuario, hábitos archivados y cerrar sesión
 @Composable
 fun PerfilScreen(
-    nombreUsuario: String?,
-    correo: String?,
-    estado: HabitosUiState,
-    snackbarHostState: SnackbarHostState,
-    onRestaurar: (Habito) -> Unit,
-    onEliminar: (Habito) -> Unit,
-    onCerrarSesion: () -> Unit,
-    barraInferior: @Composable () -> Unit
+    navController: NavController,
+    authViewModel: AuthViewModel,
+    habitosViewModel: HabitosViewModel
 ) {
-    var idOpciones by rememberSaveable { mutableStateOf<String?>(null) }
-    var idEliminar by rememberSaveable { mutableStateOf<String?>(null) }
-    val archivados = estado.archivados
+    val nombreUsuario = authViewModel.nombre
+    val correo = authViewModel.correo
+    //val telefono = authViewModel.telefono
+
+    var idMenu by rememberSaveable { mutableStateOf<String?>(null) }
+    var idBorrar by rememberSaveable { mutableStateOf<String?>(null) }
+    val archivados = habitosViewModel.archivados()
+
+    // Snackbar: avisos de los hábitos (restaurado, eliminado, errores...)
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(habitosViewModel.mensaje) {
+        val mensaje = habitosViewModel.mensaje
+        if (mensaje != null) {
+            habitosViewModel.mensaje = null
+            snackbarHostState.showSnackbar(mensaje)
+        }
+    }
+
+    // Cierra sesión y vuelve al login (borra todo el historial de pantallas)
+    fun cerrarSesion() {
+        habitosViewModel.detener()
+        authViewModel.cerrarSesion()
+        navController.navigate("login") {
+            popUpTo(0) { inclusive = true }
+        }
+    }
 
     ////////////////// Interfaz: perfil
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = barraInferior,
+        bottomBar = { BarraNavegacion(navController, rutaActual = "perfil") },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyColumn(
@@ -111,9 +137,23 @@ fun PerfilScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            /*
+                            Text(
+                                text = telefono ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                             */
                         }
                     }
                 }
+                Spacer(Modifier.height(20.dp))
+            }
+            ////////////////////////
+
+            ////////////////// Interfaz: nivel y puntos
+            item {
+                TarjetaNivel(puntos = habitosViewModel.puntos)
                 Spacer(Modifier.height(20.dp))
             }
             ////////////////////////
@@ -141,7 +181,7 @@ fun PerfilScreen(
 
             items(archivados, key = { it.id }) { habito ->
                 Surface(
-                    onClick = { idOpciones = habito.id },
+                    onClick = { idMenu = habito.id },
                     shape = RoundedCornerShape(24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
@@ -165,7 +205,7 @@ fun PerfilScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = { idOpciones = habito.id }) {
+                        IconButton(onClick = { idMenu = habito.id }) {
                             Icon(Icons.Outlined.MoreVert, contentDescription = "Opciones de ${habito.nombre}")
                         }
                     }
@@ -178,7 +218,7 @@ fun PerfilScreen(
                 Spacer(Modifier.height(24.dp))
                 BotonSecundario(
                     texto = "Cerrar sesión",
-                    onClick = onCerrarSesion,
+                    onClick = { cerrarSesion() },
                     icono = Icons.AutoMirrored.Outlined.Logout
                 )
             }
@@ -188,33 +228,38 @@ fun PerfilScreen(
     ////////////////////////
 
     ////////////////// Interfaz: opciones del archivado y confirmación de borrado
-    val habitoOpciones = idOpciones?.let { id -> archivados.firstOrNull { it.id == id } }
-    if (habitoOpciones != null) {
+    val habitoMenu = archivados.find { it.id == idMenu }
+    if (habitoMenu != null) {
         OpcionesHabitoSheet(
-            habito = habitoOpciones,
+            habito = habitoMenu,
             onEditar = {},
             onArchivar = {
-                idOpciones = null
-                onRestaurar(habitoOpciones)
+                idMenu = null
+                habitosViewModel.archivar(habitoMenu, archivar = false)
             },
             onEliminar = {
-                idOpciones = null
-                idEliminar = habitoOpciones.id
+                idMenu = null
+                idBorrar = habitoMenu.id
             },
-            onCerrar = { idOpciones = null }
+            onCerrar = { idMenu = null }
         )
     }
 
-    val habitoEliminar = idEliminar?.let { id -> archivados.firstOrNull { it.id == id } }
-    if (habitoEliminar != null) {
+    val habitoBorrar = archivados.find { it.id == idBorrar }
+    if (habitoBorrar != null) {
         DialogoEliminar(
-            habito = habitoEliminar,
+            habito = habitoBorrar,
             onConfirmar = {
-                idEliminar = null
-                onEliminar(habitoEliminar)
+                idBorrar = null
+                habitosViewModel.eliminar(habitoBorrar)
             },
-            onCancelar = { idEliminar = null }
+            onCancelar = { idBorrar = null }
         )
     }
     ////////////////////////
+    Column() {
+        Button(onClick = {}) {
+
+        }
+    }
 }

@@ -1,4 +1,9 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.pantallas
+
+import com.example.proyecto_seguimiento_habitos.modelo.*
+import com.example.proyecto_seguimiento_habitos.viewmodels.*
+import com.example.proyecto_seguimiento_habitos.componentes.*
+import com.example.proyecto_seguimiento_habitos.irAInicio
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -33,6 +38,8 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.Percent
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,30 +60,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import java.time.LocalDate
+import java.time.YearMonth
 
 // Calendario de progreso: un mes por hábito con los días en colores.
 // Los datos salen del historial real (habito.completados), no hay nada simulado.
 @Composable
 fun CalendarioScreen(
-    habitos: List<Habito>,
-    idInicial: String?,
-    onVolver: () -> Unit,
-    barraInferior: @Composable () -> Unit
+    navController: NavController,
+    habitosViewModel: HabitosViewModel,
+    idInicial: String?
 ) {
-    // Hábito elegido (si el id ya no existe, cae al primero de la lista)
-    var idSeleccionado by rememberSaveable { mutableStateOf(idInicial) }
-    val habito = habitos.firstOrNull { it.id == idSeleccionado } ?: habitos.firstOrNull()
+    val habitos = habitosViewModel.habitos
 
-    // Mes visible, guardado como un solo número para que sobreviva al girar la pantalla
-    var mesIndice by rememberSaveable { mutableStateOf(indiceDeMes(mesActual())) }
-    val mes = mesDeIndice(mesIndice)
+    // Hábito elegido (si el id ya no existe, se muestra el primero de la lista)
+    var idElegido by rememberSaveable { mutableStateOf(idInicial) }
+    val habito = habitosViewModel.buscar(idElegido) ?: habitos.firstOrNull()
 
-    // Botón atrás -> dashboard
-    BackHandler { onVolver() }
+    // Mes que se está viendo (empieza en el mes actual)
+    var mes by rememberSaveable { mutableStateOf(YearMonth.now()) }
+    val puedeAvanzar = mes.isBefore(YearMonth.now())   // no se puede ir más allá del mes actual
+
+    // Volver -> inicio
+    fun volver() {
+        irAInicio(navController)
+    }
+    BackHandler { volver() }
 
     ////////////////// Interfaz: progreso
     Scaffold(
-        bottomBar = barraInferior,
+        bottomBar = { BarraNavegacion(navController, rutaActual = "calendario") },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             ////////////////// Interfaz: barra superior (volver + título)
@@ -88,7 +102,7 @@ fun CalendarioScreen(
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onVolver) {
+                    IconButton(onClick = { volver() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver",
@@ -134,7 +148,7 @@ fun CalendarioScreen(
                     cantidad = activos.size,
                     modifier = Modifier.padding(horizontal = 24.dp)
                 )
-                FilaDeHabitos(activos, habito.id) { idSeleccionado = it }
+                FilaDeHabitos(activos, habito.id) { idElegido = it }
                 Spacer(Modifier.height(20.dp))
             }
             ////////////////////////
@@ -146,7 +160,7 @@ fun CalendarioScreen(
                     cantidad = archivados.size,
                     modifier = Modifier.padding(horizontal = 24.dp)
                 )
-                FilaDeHabitos(archivados, habito.id) { idSeleccionado = it }
+                FilaDeHabitos(archivados, habito.id) { idElegido = it }
                 Spacer(Modifier.height(20.dp))
             }
             ////////////////////////
@@ -163,7 +177,7 @@ fun CalendarioScreen(
                     Spacer(Modifier.height(12.dp))
                     Text(
                         text = "Meta: ${metaSemanal(habito)} por semana · esta semana llevas " +
-                            "${cumplidosEnLaSemana(habito, hoyCalendario())}. " +
+                            "${cumplidosEnLaSemana(habito, LocalDate.now())}. " +
                             "Las rachas de este hábito se cuentan por semanas cumplidas.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -172,10 +186,40 @@ fun CalendarioScreen(
 
                 Spacer(Modifier.height(28.dp))
 
+                ////////////////// Interfaz: apartado "Estadísticas"
+                TituloApartado("Estadísticas")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TarjetaEstadistica(
+                        icono = Icons.Outlined.Percent,
+                        valor = "${porcentajeCumplimiento(habito)}%",
+                        titulo = "Cumplimiento",
+                        modifier = Modifier.weight(1f)
+                    )
+                    TarjetaEstadistica(
+                        icono = Icons.Outlined.EmojiEvents,
+                        valor = textoRacha(mejorRacha(habito), habito),
+                        titulo = "Mejor racha",
+                        modifier = Modifier.weight(1f)
+                    )
+                    TarjetaEstadistica(
+                        icono = Icons.Outlined.TaskAlt,
+                        valor = "${totalCompletado(habito)}",
+                        titulo = "Veces completado",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                GraficoBarras(titulo = "Por semana (últimas 8)", barras = graficoSemanal(habito))
+                Spacer(Modifier.height(16.dp))
+                GraficoBarras(titulo = "Por mes (últimos 6)", barras = graficoMensual(habito))
+                ////////////////////////
+
+                Spacer(Modifier.height(28.dp))
+
                 ////////////////// Interfaz: apartado "Calendario del mes"
                 TituloApartado("Calendario del mes")
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { mesIndice-- }) {
+                    IconButton(onClick = { mes = mes.minusMonths(1) }) {
                         Icon(
                             Icons.Filled.ChevronLeft,
                             contentDescription = "Mes anterior",
@@ -190,13 +234,13 @@ fun CalendarioScreen(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = { mesIndice++ },
-                        enabled = hayMesSiguiente(mes)
+                        onClick = { mes = mes.plusMonths(1) },
+                        enabled = puedeAvanzar
                     ) {
                         Icon(
                             Icons.Filled.ChevronRight,
                             contentDescription = "Mes siguiente",
-                            tint = if (hayMesSiguiente(mes)) MaterialTheme.colorScheme.primary
+                            tint = if (puedeAvanzar) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.outlineVariant
                         )
                     }
@@ -228,7 +272,7 @@ fun CalendarioScreen(
                         Spacer(Modifier.height(10.dp))
 
                         // Semanas de 7 casillas (los huecos del inicio y del final son null)
-                        semanasDelMes(habito, mes).forEach { semana ->
+                        casillasDelMes(habito, mes).chunked(7).forEach { semana ->
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 semana.forEach { casilla ->
                                     CasillaCalendario(
@@ -249,13 +293,22 @@ fun CalendarioScreen(
                 Spacer(Modifier.height(16.dp))
 
                 ////////////////// Interfaz: resumen del mes
-                val resumen = resumenDelMes(habito, mes)
+                // Cuenta cumplidos y fallados del mes (los días que no tocaban no cuentan)
+                var cumplidos = 0
+                var fallados = 0
+                for (casilla in casillasDelMes(habito, mes)) {
+                    if (casilla?.estado == EstadoDia.CUMPLIDO) cumplidos++
+                    if (casilla?.estado == EstadoDia.FALLADO) fallados++
+                }
+                val programados = cumplidos + fallados
+                val porcentaje = if (programados == 0) 0 else cumplidos * 100 / programados
+
                 Text(
-                    text = if (resumen.programados == 0) {
+                    text = if (programados == 0) {
                         "Este mes todavía no hay días que contar para este hábito."
                     } else {
-                        "Este mes: ${resumen.cumplidos} cumplidos y ${resumen.fallados} fallados " +
-                            "de ${resumen.programados} días que tocaban (${resumen.porcentaje}%)."
+                        "Este mes: $cumplidos cumplidos y $fallados fallados " +
+                            "de $programados días que tocaban ($porcentaje%)."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -565,7 +618,7 @@ private fun CasillaCalendario(casilla: CasillaDia?, modifier: Modifier = Modifie
     }
 
     // Hoy se marca con un borde más fuerte, que manda sobre el del día programado
-    val esHoy = mismoDia(casilla.fecha, hoyCalendario())
+    val esHoy = casilla.fecha == LocalDate.now()
     val bordeFinal = if (esHoy) colores.primary else borde
 
     Box(
@@ -577,7 +630,7 @@ private fun CasillaCalendario(casilla: CasillaDia?, modifier: Modifier = Modifie
         Surface(
             shape = CircleShape,
             color = fondo,
-            border = bordeFinal?.let { BorderStroke(if (esHoy) 2.dp else 1.5.dp, it) },
+            border = if (bordeFinal != null) BorderStroke(if (esHoy) 2.dp else 1.5.dp, bordeFinal) else null,
             modifier = Modifier.fillMaxSize()
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -618,7 +671,7 @@ private fun ItemLeyenda(texto: String, fondo: Color, borde: Color?) {
         Surface(
             shape = CircleShape,
             color = fondo,
-            border = borde?.let { BorderStroke(2.dp, it) },
+            border = if (borde != null) BorderStroke(2.dp, borde) else null,
             modifier = Modifier.size(12.dp)
         ) {}
         Spacer(Modifier.width(6.dp))
@@ -668,11 +721,4 @@ private fun MensajeSinHabitos(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center
         )
     }
-}
-
-// Agrupa las casillas del mes en filas de 7, rellenando el final con huecos
-private fun semanasDelMes(habito: Habito, mes: MesVisible): List<List<CasillaDia?>> {
-    val casillas = casillasDelMes(habito, mes).toMutableList()
-    while (casillas.size % 7 != 0) casillas.add(null)
-    return casillas.chunked(7)
 }

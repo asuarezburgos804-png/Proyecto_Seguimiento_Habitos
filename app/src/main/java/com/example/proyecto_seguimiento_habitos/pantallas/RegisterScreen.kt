@@ -1,4 +1,8 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.pantallas
+
+import com.example.proyecto_seguimiento_habitos.viewmodels.*
+import com.example.proyecto_seguimiento_habitos.validaciones.*
+import com.example.proyecto_seguimiento_habitos.componentes.*
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -24,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.outlined.AdUnits
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mail
 import androidx.compose.material.icons.outlined.Person
@@ -60,16 +65,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.example.proyecto_seguimiento_habitos.ui.theme.Crema
 
 // Pantalla de registro
 @Composable
-fun RegisterScreen(
-    uiState: AuthUiState,
-    onRegister: (nombre: String, correo: String, password: String) -> Unit,
-    onNavigateToLogin: () -> Unit,
-    onErrorShown: () -> Unit
-) {
+fun RegisterScreen(navController: NavController, authViewModel: AuthViewModel) {
     // Campos del formulario
     var nombre by rememberSaveable { mutableStateOf("") }
     var correo by rememberSaveable { mutableStateOf("") }
@@ -77,6 +78,7 @@ fun RegisterScreen(
     var confirmacion by rememberSaveable { mutableStateOf("") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     var aceptaTerminos by rememberSaveable { mutableStateOf(false) }
+    //var telefono by rememberSaveable {mutableStateOf("")}
 
     // Errores (null = sin error)
     var nombreError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -84,30 +86,42 @@ fun RegisterScreen(
     var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmacionError by rememberSaveable { mutableStateOf<String?>(null) }
     var terminosError by rememberSaveable { mutableStateOf<String?>(null) }
+    //var telefonoError by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Snackbar
+    // Snackbar: muestra los errores de Firebase
     val snackbarHostState = remember { SnackbarHostState() }
-
-    // Muestra errores de Firebase
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            onErrorShown()
+    LaunchedEffect(authViewModel.error) {
+        val error = authViewModel.error
+        if (error != null) {
+            snackbarHostState.showSnackbar(error)
+            authViewModel.error = null
         }
     }
 
-    // Valida todos los campos
-    fun validar(): Boolean {
+    // Vuelve al login
+    fun volverAlLogin() {
+        authViewModel.error = null
+        navController.popBackStack()
+    }
+
+    // Valida todos los campos y, si están bien, crea la cuenta
+    fun registrar() {
         nombreError = Validators.validarNombre(nombre)
         correoError = Validators.validarCorreo(correo)
         passwordError = Validators.validarPassword(password)
         confirmacionError = Validators.validarConfirmacion(password, confirmacion)
+        //telefonoError = Validators.validarTelefono(telefono)
         terminosError = if (aceptaTerminos) null else "Debes aceptar los términos para continuar"
-        return nombreError == null &&
+
+        val todoBien = nombreError == null &&
             correoError == null &&
             passwordError == null &&
             confirmacionError == null &&
+            //telefonoError == null &&
             terminosError == null
+        if (todoBien) {
+            authViewModel.registrar(nombre, correo, password)
+        }
     }
 
     ////////////////// Interfaz: registro (fondo con aura suave)
@@ -136,8 +150,8 @@ fun RegisterScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Surface(
-                    onClick = onNavigateToLogin,
-                    enabled = !uiState.isLoading,
+                    onClick = { volverAlLogin() },
+                    enabled = !authViewModel.cargando,
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
@@ -256,6 +270,26 @@ fun RegisterScreen(
             )
             Spacer(Modifier.height(4.dp))
 
+            ////////////////// Interfaz: teléfono
+            /*
+            CampoTexto(
+                valor = telefono,
+                onValorChange = {
+                    telefono = it
+                    if (telefonoError != null) telefonoError = null
+                },
+                etiqueta = "Teléfono",
+                placeholder = "987654321",
+                icono = Icons.Outlined.AdUnits,
+                error = telefonoError,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Next
+                )
+            )
+            Spacer(Modifier.height(4.dp))
+
+             */
             ////////////////// Interfaz: contraseña
             CampoTexto(
                 valor = password,
@@ -349,8 +383,8 @@ fun RegisterScreen(
             ////////////////// Interfaz: botón Crear cuenta
             BotonPrincipal(
                 texto = "Crear cuenta",
-                onClick = { if (validar()) onRegister(nombre, correo, password) },
-                cargando = uiState.isLoading
+                onClick = { registrar() },
+                cargando = authViewModel.cargando
             )
             ////////////////////////
             Spacer(Modifier.height(24.dp))
@@ -382,8 +416,8 @@ fun RegisterScreen(
                     color = MaterialTheme.colorScheme.secondary
                 )
                 TextButton(
-                    onClick = onNavigateToLogin,
-                    enabled = !uiState.isLoading
+                    onClick = { volverAlLogin() },
+                    enabled = !authViewModel.cargando
                 ) {
                     Text(
                         text = "Iniciar sesión",
@@ -393,6 +427,11 @@ fun RegisterScreen(
                     )
                 }
             }
+            BotonPrincipal(
+                texto = "Reestablecer contraseña",
+                onClick = { },
+                cargando = authViewModel.cargando
+            )
             ////////////////////////
         }
     }

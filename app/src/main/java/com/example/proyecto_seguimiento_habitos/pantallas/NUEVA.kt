@@ -1,4 +1,9 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.pantallas
+
+import com.example.proyecto_seguimiento_habitos.modelo.*
+import com.example.proyecto_seguimiento_habitos.basededatos.*
+import com.example.proyecto_seguimiento_habitos.validaciones.*
+import com.example.proyecto_seguimiento_habitos.componentes.*
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -62,7 +67,7 @@ import androidx.compose.ui.unit.dp
 // habitoExistente != null -> modo edición (no toca el historial)
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CrearHabitoScreen(
+fun button(
     onCancelar: () -> Unit,
     onHabitoGuardado: () -> Unit,
     habitoExistente: Habito? = null
@@ -77,6 +82,7 @@ fun CrearHabitoScreen(
     var veces by rememberSaveable {
         mutableStateOf(habitoExistente?.vecesPorSemana?.takeIf { it > 0 }?.toString() ?: "")
     }
+    var nota by rememberSaveable{mutableStateOf(habitoExistente?.nota?: "")}
     var horario by rememberSaveable { mutableStateOf(habitoExistente?.horario ?: "") }
     var mostrarReloj by rememberSaveable { mutableStateOf(false) }
 
@@ -131,7 +137,8 @@ fun CrearHabitoScreen(
             } else {
                 0
             },
-            horario = horario
+            horario = horario,
+            nota = nota
         )
 
         val onExito = {
@@ -343,7 +350,16 @@ fun CrearHabitoScreen(
             }
             TextoError(horarioError)
             ////////////////////////
-
+            /*
+            Spacer(Modifier.height(24.dp))
+            CampoTexto(
+                valor = nota,
+                onValorChange = { nota = it },
+                etiqueta = "Nota (opcional)",
+                placeholder = "Ej. Leer antes de dormir",
+                icono = Icons.Outlined.Edit
+            )
+            */
             ////////////////// Interfaz: aviso en modo edición
             if (editando) {
                 Spacer(Modifier.height(16.dp))
@@ -500,3 +516,4 @@ private fun SelectorHora(
     )
     ////////////////////////
 }
+

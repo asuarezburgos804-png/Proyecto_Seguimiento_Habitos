@@ -1,7 +1,10 @@
-package com.example.proyecto_seguimiento_habitos
+package com.example.proyecto_seguimiento_habitos.pantallas
+
+import com.example.proyecto_seguimiento_habitos.viewmodels.*
+import com.example.proyecto_seguimiento_habitos.validaciones.*
+import com.example.proyecto_seguimiento_habitos.componentes.*
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,15 +56,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 
 // Pantalla de inicio de sesión
 @Composable
-fun LoginScreen(
-    uiState: AuthUiState,
-    onLogin: (correo: String, password: String, mantenerSesion: Boolean) -> Unit,
-    onNavigateToRegister: () -> Unit,
-    onErrorShown: () -> Unit
-) {
+fun LoginScreen(navController: NavController, authViewModel: AuthViewModel) {
     // Campos del formulario
     var correo by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -73,24 +72,25 @@ fun LoginScreen(
     var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Bloqueo temporal por intentos fallidos
-    val bloqueado = uiState.segundosBloqueo > 0
+    val bloqueado = authViewModel.segundosBloqueo > 0
 
-    // Snackbar
+    // Snackbar: muestra los errores de Firebase
     val snackbarHostState = remember { SnackbarHostState() }
-
-    // Muestra errores de Firebase
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            onErrorShown()
+    LaunchedEffect(authViewModel.error) {
+        val error = authViewModel.error
+        if (error != null) {
+            snackbarHostState.showSnackbar(error)
+            authViewModel.error = null
         }
     }
 
-    // Valida correo y contraseña
-    fun validar(): Boolean {
+    // Valida los campos y, si están bien, inicia sesión
+    fun iniciarSesion() {
         correoError = Validators.validarCorreo(correo)
         passwordError = Validators.validarPasswordLogin(password)
-        return correoError == null && passwordError == null
+        if (correoError == null && passwordError == null) {
+            authViewModel.iniciarSesion(correo, password, mantenerSesion)
+        }
     }
 
     ////////////////// Interfaz: login
@@ -239,7 +239,7 @@ fun LoginScreen(
                         Spacer(Modifier.width(12.dp))
                         Text(
                             text = "Demasiados intentos fallidos. Podrás intentarlo de nuevo en " +
-                                "${uiState.segundosBloqueo} s.",
+                                "${authViewModel.segundosBloqueo} s.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -251,10 +251,10 @@ fun LoginScreen(
 
             ////////////////// Interfaz: botón Iniciar sesión
             BotonPrincipal(
-                texto = if (bloqueado) "Bloqueado (${uiState.segundosBloqueo} s)" else "Iniciar sesión",
-                onClick = { if (validar()) onLogin(correo, password, mantenerSesion) },
+                texto = if (bloqueado) "Bloqueado (${authViewModel.segundosBloqueo} s)" else "Iniciar sesión",
+                onClick = { iniciarSesion() },
                 habilitado = !bloqueado,
-                cargando = uiState.isLoading,
+                cargando = authViewModel.cargando,
                 iconoFinal = if (bloqueado) null else Icons.AutoMirrored.Filled.ArrowForward
             )
             ////////////////////////
@@ -268,9 +268,17 @@ fun LoginScreen(
             )
             Spacer(Modifier.height(16.dp))
             BotonSecundario(
+                texto = "Nueva",
+                onClick = { navController.navigate("nueva") },
+                habilitado = !authViewModel.cargando
+            )
+            BotonSecundario(
                 texto = "Crear una cuenta",
-                onClick = onNavigateToRegister,
-                habilitado = !uiState.isLoading
+                onClick = {
+                    authViewModel.error = null
+                    navController.navigate("register")
+                },
+                habilitado = !authViewModel.cargando
             )
             ////////////////////////
         }

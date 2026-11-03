@@ -1,187 +1,131 @@
 package com.example.proyecto_seguimiento_habitos
 
+import com.example.proyecto_seguimiento_habitos.viewmodels.*
+import com.example.proyecto_seguimiento_habitos.pantallas.*
+import com.example.proyecto_seguimiento_habitos.notificaciones.*
+
+import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.example.proyecto_seguimiento_habitos.ui.theme.Proyecto_Seguimiento_HabitosTheme
 
-// Pantallas de la app
-private enum class Pantalla { LOGIN, REGISTER, PRINCIPAL, CREAR_HABITO, EDITAR_HABITO, CALENDARIO }
-
-// Actividad principal
+// Actividad principal: aplica el tema y muestra la navegación
 class MainActivity : ComponentActivity() {
-
-    // Arranca la app
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        ////////////////// Interfaz: tema + navegación
         setContent {
             Proyecto_Seguimiento_HabitosTheme {
-                AppNavegacion()
+                AppNavigation()
             }
         }
-        ////////////////////////
     }
 }
 
-// Navegación: decide qué pantalla mostrar
+// Navegación: una ruta (texto) por cada pantalla
 @Composable
-private fun AppNavegacion(
-    authViewModel: AuthViewModel = viewModel(),
-    habitosViewModel: HabitosViewModel = viewModel()
-) {
-    // Estado de la sesión y de los hábitos
-    val uiState by authViewModel.uiState.collectAsState()
-    val habitosState by habitosViewModel.uiState.collectAsState()
+fun AppNavigation() {
+    val navController = rememberNavController()
 
-    // Pantalla y pestaña actuales
-    var pantalla by rememberSaveable { mutableStateOf(Pantalla.LOGIN) }
-    var pestana by rememberSaveable { mutableStateOf(Pestana.INICIO) }
-    var idEditar by rememberSaveable { mutableStateOf<String?>(null) }
-    var idCalendario by rememberSaveable { mutableStateOf<String?>(null) }
+    // ViewModels compartidos por todas las pantallas
+    val authViewModel: AuthViewModel = viewModel()
+    val habitosViewModel: HabitosViewModel = viewModel()
 
-    // Snackbar compartido por inicio y perfil
-    val snackbarHostState = remember { SnackbarHostState() }
+    // Ventana que pide permiso para mostrar notificaciones (Android 13 o más)
+    val context = LocalContext.current
+    val pedirPermiso = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    // Con sesión: escucha los hábitos en tiempo real
-    LaunchedEffect(uiState.isAuthenticated) {
-        if (uiState.isAuthenticated) habitosViewModel.escuchar()
-    }
-
-    // Avisos de los hábitos (errores, archivado, eliminado)
-    LaunchedEffect(habitosState.mensaje) {
-        habitosState.mensaje?.let {
-            habitosViewModel.limpiarMensaje()
-            snackbarHostState.showSnackbar(it)
-        }
-    }
-
-    // Barra inferior: Stats abre el calendario de progreso (Logros aún no existe)
-    val pestanaActual = if (pantalla == Pantalla.CALENDARIO) Pestana.STATS else pestana
-    val barraInferior: @Composable () -> Unit = {
-        BarraNavegacion(actual = pestanaActual) { elegida ->
-            when (elegida) {
-                Pestana.ANADIR -> pantalla = Pantalla.CREAR_HABITO
-                Pestana.STATS -> {
-                    idCalendario = null          // sin hábito fijo: se elige en la pantalla
-                    pantalla = Pantalla.CALENDARIO
-                }
-                Pestana.LOGROS -> habitosViewModel.avisar("Esta sección estará disponible pronto.")
-                else -> {
-                    pestana = elegida
-                    pantalla = Pantalla.PRINCIPAL
-                }
+    // Cuando se inicia sesión: carga los hábitos y va al inicio (borra login y registro del historial)
+    LaunchedEffect(authViewModel.sesionIniciada) {
+        if (authViewModel.sesionIniciada) {
+            habitosViewModel.escuchar()
+            navController.navigate("inicio") {
+                popUpTo(0) { inclusive = true }
+            }
+            if (!Notificaciones.hayPermiso(context)) {
+                pedirPermiso.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
 
-    ////////////////// Interfaz: pantalla actual
-    val habitoEditar = idEditar?.let { habitosViewModel.buscar(it) }
-    when {
-        // Crear hábito
-        uiState.isAuthenticated && pantalla == Pantalla.CREAR_HABITO -> CrearHabitoScreen(
-            onCancelar = { pantalla = Pantalla.PRINCIPAL },
-            onHabitoGuardado = {
-                pestana = Pestana.INICIO
-                pantalla = Pantalla.PRINCIPAL
-            }
-        )
-
-        // Editar hábito
-        uiState.isAuthenticated && pantalla == Pantalla.EDITAR_HABITO && habitoEditar != null -> CrearHabitoScreen(
-            habitoExistente = habitoEditar,
-            onCancelar = { pantalla = Pantalla.PRINCIPAL },
-            onHabitoGuardado = {
-                habitosViewModel.avisar("Cambios guardados.")
-                pantalla = Pantalla.PRINCIPAL
-            }
-        )
-
-        // Calendario de progreso
-        uiState.isAuthenticated && pantalla == Pantalla.CALENDARIO -> CalendarioScreen(
-            habitos = habitosState.habitos,
-            idInicial = idCalendario,
-            onVolver = {
-                pestana = Pestana.INICIO
-                pantalla = Pantalla.PRINCIPAL
-            },
-            barraInferior = barraInferior
-        )
-
-        // Perfil
-        uiState.isAuthenticated && pestana == Pestana.PERFIL -> PerfilScreen(
-            nombreUsuario = uiState.userName,
-            correo = uiState.userEmail,
-            estado = habitosState,
-            snackbarHostState = snackbarHostState,
-            onRestaurar = { habitosViewModel.archivar(it, archivar = false) },
-            onEliminar = { habitosViewModel.eliminar(it) },
-            // Salir -> login
-            onCerrarSesion = {
-                habitosViewModel.detener()
-                authViewModel.cerrarSesion()
-                pestana = Pestana.INICIO
-                pantalla = Pantalla.LOGIN
-            },
-            barraInferior = barraInferior
-        )
-
-        // Dashboard
-        uiState.isAuthenticated -> DashboardScreen(
-            nombreUsuario = uiState.userName,
-            estado = habitosState,
-            snackbarHostState = snackbarHostState,
-            onMarcar = { habito, completado -> habitosViewModel.marcar(habito, completado) },
-            onEditar = {
-                idEditar = it.id
-                pantalla = Pantalla.EDITAR_HABITO
-            },
-            onArchivar = { habitosViewModel.archivar(it, archivar = true) },
-            onEliminar = { habitosViewModel.eliminar(it) },
-            onVerCalendario = {
-                idCalendario = it.id
-                pantalla = Pantalla.CALENDARIO
-            },
-            barraInferior = barraInferior
-        )
-
-        // Registro
-        pantalla == Pantalla.REGISTER -> RegisterScreen(
-            uiState = uiState,
-            onRegister = { nombre, correo, password ->
-                authViewModel.registrar(nombre, correo, password)
-            },
-            onNavigateToLogin = {
-                authViewModel.limpiarError()
-                pantalla = Pantalla.LOGIN
-            },
-            onErrorShown = { authViewModel.limpiarError() }
-        )
-
-        // Login
-        else -> LoginScreen(
-            uiState = uiState,
-            onLogin = { correo, password, mantener ->
-                authViewModel.iniciarSesion(correo, password, mantener)
-            },
-            onNavigateToRegister = {
-                authViewModel.limpiarError()
-                pantalla = Pantalla.REGISTER
-            },
-            onErrorShown = { authViewModel.limpiarError() }
-        )
+    // Cada vez que cambian los hábitos (nuevo, editado, marcado...) se reprograman las alarmas
+    LaunchedEffect(habitosViewModel.habitos) {
+        if (authViewModel.sesionIniciada) {
+            Recordatorios.programar(context, habitosViewModel.habitos)
+        }
     }
-    ////////////////////////
+
+    NavHost(navController = navController, startDestination = "login") {
+
+        composable("login") {
+            LoginScreen(navController, authViewModel)
+        }
+
+        composable("register") {
+            RegisterScreen(navController, authViewModel)
+        }
+
+        // Pantalla de práctica (NUEVA.kt): antes no estaba registrada y el botón "Nueva" cerraba la app
+        composable("nueva") {
+            button(
+                onCancelar = { navController.popBackStack() },
+                onHabitoGuardado = { navController.popBackStack() }
+            )
+        }
+
+        composable("inicio") {
+            DashboardScreen(navController, authViewModel, habitosViewModel)
+        }
+
+        composable("perfil") {
+            PerfilScreen(navController, authViewModel, habitosViewModel)
+        }
+
+        composable("crear") {
+            CrearHabitoScreen(navController, habitosViewModel, habitoExistente = null)
+        }
+
+        // Editar: el id del hábito viaja en la ruta, ej. "editar/abc123"
+        composable("editar/{id}") { ruta ->
+            val id = ruta.arguments?.getString("id")
+            val habito = habitosViewModel.buscar(id)
+            if (habito != null) {
+                CrearHabitoScreen(navController, habitosViewModel, habitoExistente = habito)
+            }
+        }
+
+        // Calendario sin hábito elegido (desde la barra inferior)
+        composable("calendario") {
+            CalendarioScreen(navController, habitosViewModel, idInicial = null)
+        }
+
+        // Calendario de un hábito concreto, ej. "calendario/abc123"
+        composable("calendario/{id}") { ruta ->
+            val id = ruta.arguments?.getString("id")
+            CalendarioScreen(navController, habitosViewModel, idInicial = id)
+        }
+
+        composable("logros") {
+            LogrosScreen()
+        }
+    }
+}
+
+// Vuelve al inicio sin apilar pantallas repetidas
+fun irAInicio(navController: NavController) {
+    navController.navigate("inicio") {
+        popUpTo("inicio") { inclusive = true }
+    }
 }
