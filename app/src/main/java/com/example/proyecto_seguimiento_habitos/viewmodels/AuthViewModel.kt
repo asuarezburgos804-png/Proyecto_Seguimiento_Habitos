@@ -1,5 +1,7 @@
 package com.example.proyecto_seguimiento_habitos.viewmodels
 
+import com.example.proyecto_seguimiento_habitos.modelo.*
+
 import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.getValue
@@ -15,6 +17,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -29,8 +33,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     var nombre by mutableStateOf<String?>(null)
     var segundosBloqueo by mutableStateOf(0)         // > 0 = login bloqueado
 
+    // Perfil del usuario (se leen de usuarios/{uid} y se actualizan solos)
+    var avatar by mutableStateOf("")                     // foto de perfil en texto ("" = sin foto)
+    var medallas by mutableStateOf(listOf<String>())     // ids de las medallas ya desbloqueadas
+    var perfilCargado by mutableStateOf(false)           // true cuando ya llegaron los datos del perfil
+    var medallaNueva by mutableStateOf<Medalla?>(null)   // medalla recién ganada (para el aviso)
+
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
+
+    // Conexión en tiempo real con el perfil del usuario
+    private var escuchaPerfil: ListenerRegistration? = null
 
     // Datos guardados en el teléfono: "mantener sesión" e intentos fallidos
     private val prefs = application.getSharedPreferences("sesion", Context.MODE_PRIVATE)
@@ -50,7 +63,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         if (prefs.getBoolean("mantener_sesion", false)) {
             sesionIniciada = true
             correo = usuario.email
-            cargarNombre(usuario.uid)
+            escucharPerfil(usuario.uid)
         } else {
             auth.signOut()
         }
@@ -92,6 +105,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 sesionIniciada = true
                 correo = correoLimpio
                 nombre = nombreLimpio
+                escucharPerfil(uid)
             }
             .addOnFailureListener { e ->
                 cargando = false
@@ -122,7 +136,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 cargando = false
                 sesionIniciada = true
                 correo = correoLimpio
-                cargarNombre(resultado.user!!.uid)
+                escucharPerfil(resultado.user!!.uid)
             }
             .addOnFailureListener { e ->
                 cargando = false
@@ -177,25 +191,92 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Lee el nombre del perfil (para el saludo del inicio)
-    private fun cargarNombre(uid: String) {
-        db.collection("usuarios").document(uid).get()
-            .addOnSuccessListener { documento ->
+    ////////////////// Perfil del usuario (usuarios/{uid})
+
+    // Escucha el perfil en tiempo real: nombre, foto y medallas ganadas
+    @Suppress("UNCHECKED_CAST")
+    private fun escucharPerfil(uid: String) {
+        escuchaPerfil?.remove()
+        escuchaPerfil = db.collection("usuarios").document(uid)
+            .addSnapshotListener { documento, fallo ->
+                if (fallo != null || documento == null) return@addSnapshotListener
+
                 val nombreGuardado = documento.getString("nombre")
                 if (!nombreGuardado.isNullOrBlank()) {
                     nombre = nombreGuardado
                 }
+                avatar = documento.getString("avatar") ?: ""
+                medallas = documento.get("medallas") as? List<String> ?: emptyList()
+                perfilCargado = true
             }
+    }
+
+    // Guarda el nombre nuevo (merge = solo cambia ese campo del perfil)
+    fun guardarNombre(nombreNuevo: String) {
+        val uid = auth.currentUser?.uid ?: return
+        val nombreLimpio = nombreNuevo.trim()
+        if (nombreLimpio.isEmpty()) {
+            error = "El nombre no puede estar vacío."
+            return
+        }
+        nombre = nombreLimpio
+        db.collection("usuarios").document(uid)
+            .set(hashMapOf("nombre" to nombreLimpio), SetOptions.merge())
+            .addOnFailureListener { error = "No se pudo guardar el nombre." }
+    }
+
+    // Guarda la foto de perfil ("" para quitarla)
+    fun guardarAvatar(avatarNuevo: String) {
+        val uid = auth.currentUser?.uid ?: return
+        avatar = avatarNuevo
+        db.collection("usuarios").document(uid)
+            .set(hashMapOf("avatar" to avatarNuevo), SetOptions.merge())
+            .addOnFailureListener { error = "No se pudo guardar la foto." }
+    }
+
+    ////////////////// Medallas
+
+    // Revisa si el usuario acaba de ganar medallas nuevas.
+    // Devuelve solo las nuevas (las que ya tenía no se avisan otra vez).
+    fun revisarMedallas(habitos: List<Habito>, puntos: Int): List<Medalla> {
+        if (!perfilCargado) return emptyList()          // todavía no llegaron las medallas guardadas
+        val uid = auth.currentUser?.uid ?: return emptyList()
+
+        val resumen = resumenDe(habitos, puntos)
+        val conseguidas = idsObtenidos(resumen, medallas)   // incluye las que ya tenía
+        val nuevas = conseguidas.filter { !medallas.contains(it) }
+        if (nuevas.isEmpty()) return emptyList()
+
+        // Se guardan para que el aviso salga una sola vez
+        medallas = conseguidas
+        db.collection("usuarios").document(uid)
+            .set(hashMapOf("medallas" to conseguidas), SetOptions.merge())
+            .addOnFailureListener { error = "No se pudieron guardar las medallas." }
+
+        val medallasNuevas = nuevas.mapNotNull { buscarMedalla(it) }
+        medallaNueva = medallasNuevas.firstOrNull()     // la primera se muestra en el aviso
+        return medallasNuevas
     }
 
     // Cierra la sesión
     fun cerrarSesion() {
         auth.signOut()
         prefs.edit { putBoolean("mantener_sesion", false) }
+        escuchaPerfil?.remove()
+        escuchaPerfil = null
         sesionIniciada = false
         correo = null
         nombre = null
+        avatar = ""
+        medallas = emptyList()
+        perfilCargado = false
+        medallaNueva = null
         error = null
         cargando = false
+    }
+
+    // Se llama cuando se cierra la app
+    override fun onCleared() {
+        escuchaPerfil?.remove()
     }
 }

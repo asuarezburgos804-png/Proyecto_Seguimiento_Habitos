@@ -3,6 +3,7 @@ package com.example.proyecto_seguimiento_habitos
 import com.example.proyecto_seguimiento_habitos.viewmodels.*
 import com.example.proyecto_seguimiento_habitos.pantallas.*
 import com.example.proyecto_seguimiento_habitos.notificaciones.*
+import com.example.proyecto_seguimiento_habitos.componentes.DialogoMedallaNueva
 
 import android.Manifest
 import android.os.Bundle
@@ -67,6 +68,22 @@ fun AppNavigation() {
         }
     }
 
+    // Medallas: cada vez que cambian los hábitos o los puntos se revisa si hay alguna nueva.
+    // Las nuevas se avisan con una notificación (y con la ventana de abajo).
+    LaunchedEffect(habitosViewModel.habitos, habitosViewModel.puntos, authViewModel.perfilCargado) {
+        if (authViewModel.sesionIniciada) {
+            val nuevas = authViewModel.revisarMedallas(habitosViewModel.habitos, habitosViewModel.puntos)
+            for (medalla in nuevas) {
+                Notificaciones.mostrar(
+                    context = context,
+                    codigo = medalla.id.hashCode(),
+                    titulo = "¡Medalla desbloqueada!",
+                    texto = "${medalla.nombre}: ${medalla.descripcion}"
+                )
+            }
+        }
+    }
+
     NavHost(navController = navController, startDestination = "login") {
 
         composable("login") {
@@ -75,14 +92,6 @@ fun AppNavigation() {
 
         composable("register") {
             RegisterScreen(navController, authViewModel)
-        }
-
-        // Pantalla de práctica (NUEVA.kt): antes no estaba registrada y el botón "Nueva" cerraba la app
-        composable("nueva") {
-            button(
-                onCancelar = { navController.popBackStack() },
-                onHabitoGuardado = { navController.popBackStack() }
-            )
         }
 
         composable("inicio") {
@@ -118,9 +127,19 @@ fun AppNavigation() {
         }
 
         composable("logros") {
-            LogrosScreen()
+            LogrosScreen(navController, authViewModel, habitosViewModel)
         }
     }
+
+    ////////////////// Interfaz: aviso de medalla nueva (sale encima de cualquier pantalla)
+    val medallaNueva = authViewModel.medallaNueva
+    if (medallaNueva != null) {
+        DialogoMedallaNueva(
+            medalla = medallaNueva,
+            onCerrar = { authViewModel.medallaNueva = null }
+        )
+    }
+    ////////////////////////
 }
 
 // Vuelve al inicio sin apilar pantallas repetidas

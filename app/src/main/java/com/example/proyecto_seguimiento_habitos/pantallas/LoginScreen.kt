@@ -268,11 +268,6 @@ fun LoginScreen(navController: NavController, authViewModel: AuthViewModel) {
             )
             Spacer(Modifier.height(16.dp))
             BotonSecundario(
-                texto = "Nueva",
-                onClick = { navController.navigate("nueva") },
-                habilitado = !authViewModel.cargando
-            )
-            BotonSecundario(
                 texto = "Crear una cuenta",
                 onClick = {
                     authViewModel.error = null
